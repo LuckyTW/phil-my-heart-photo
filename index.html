@@ -351,6 +351,11 @@
     <label>Photo sharpness <span class="range-val" id="sharpVal"></span></label>
     <input type="range" id="sharp" min="0" max="10" step="1">
     <p>More sharpness makes faces crisper. Too much and the background gets noisy.</p>
+    <label style="display:flex;align-items:center;gap:9px;margin-top:18px;cursor:pointer">
+      <input type="checkbox" id="anyDevice" style="width:auto;margin:0;flex:none;transform:scale(1.3)">
+      Show all Bluetooth devices
+    </label>
+    <p>Turn this on if the printer never shows up in the device picker — common on iPhone with Bluefy. The list will then include phones and headphones too, so pick your printer by name (GB / GT / MX / YT / SC…).</p>
     <button class="btn" id="testPrint">Test print</button>
     <button class="btn ghost" id="feedTest">Paper feed test (diagnostic)</button>
     <button class="btn ghost" id="printBtnB">Print with method B (diagnostic)</button>
@@ -457,6 +462,9 @@ const cfg = {
   set bright(v){ store.set('pmh_bright', v); },
   get sharp(){ return parseInt(store.get('pmh_sharp')||'6'); },
   set sharp(v){ store.set('pmh_sharp', v); },
+  /* 기기 선택창에 프린터가 아예 안 뜰 때 쓰는 탈출구 (아이폰 Bluefy에서 종종 필요) */
+  get anyDevice(){ return store.get('pmh_any_device') === '1'; },
+  set anyDevice(v){ store.set('pmh_any_device', v ? '1' : '0'); },
 };
 
 /* ================= 카드 합성 ================= */
@@ -1314,46 +1322,74 @@ function pktB(cmd, payload){
 const LATTICE_START = [0xAA,0x55,0x17,0x38,0x44,0x5F,0x5F,0x5F,0x44,0x38,0x2C];
 const LATTICE_END   = [0xAA,0x55,0x17,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x17];
 
+/* 16비트 UUID를 정식 128비트 문자열로 편다.
+   크롬은 0xae30 같은 숫자를 알아서 펴 주지만, iOS용 Web BLE 브라우저(Bluefy 등)의
+   구현은 숫자 형태를 그대로 받지 못하고 optionalServices 파싱 단계에서 통째로 실패할 수 있다.
+   정식 문자열은 어느 구현에서나 유효하므로 처음부터 문자열로 넘긴다. */
+const uuid16 = n => `0000${n.toString(16).padStart(4,'0')}-0000-1000-8000-00805f9b34fb`;
+const SVC_AE30 = uuid16(0xae30), SVC_AF30 = uuid16(0xaf30);
+const CHR_CTRL = uuid16(0xae01), CHR_NOTIFY = uuid16(0xae02), CHR_DATA = uuid16(0xae03);
+
 /* 진단용 후보 서비스 목록.
    Web Bluetooth 는 여기에 미리 적어 둔 서비스만 노출한다.
    적어 두지 않으면 기기가 실제로 갖고 있어도 getPrimaryServices() 에 나타나지 않는다.
    0x180A(기기 정보)는 제조사·모델·펌웨어 버전을 알려 줘서 기종 식별에 특히 유용하다. */
 const PROBE_SERVICES = [
-  0xae30, 0xaf30,                    // 고양이 프린터 계열
-  0x18f0,                            // ESC/POS 계열 감열 프린터
-  0xff00, 0xffe0, 0xfff0, 0xfee7,    // 범용 BLE 시리얼 변종
-  0x180a,                            // 기기 정보 (제조사·모델·펌웨어)
-  '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART
+  SVC_AE30, SVC_AF30,                                      // 고양이 프린터 계열
+  uuid16(0x18f0),                                          // ESC/POS 계열 감열 프린터
+  uuid16(0xff00), uuid16(0xffe0), uuid16(0xfff0), uuid16(0xfee7), // 범용 BLE 시리얼 변종
+  uuid16(0x180a),                                          // 기기 정보 (제조사·모델·펌웨어)
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e',                  // Nordic UART
+];
+
+/* 이름 앞자리로 거르는 기본 필터.
+   프린터만 딱 보여 줘서 현장에서 고르기 쉽지만, 이름을 광고하지 않는 기기나
+   namePrefix 를 제대로 처리하지 못하는 브라우저에서는 목록이 비어 버린다.
+   그럴 때를 위한 탈출구가 설정의 'Show all Bluetooth devices' 다. */
+const NAME_FILTERS = [
+  {services:[SVC_AE30]}, {services:[SVC_AF30]},
+  {namePrefix:'GB0'},{namePrefix:'GT0'},{namePrefix:'YT0'},
+  {namePrefix:'MX0'},{namePrefix:'MX1'},{namePrefix:'MXW'},{namePrefix:'MXTP'},
+  {namePrefix:'SC0'},{namePrefix:'SC1'},
 ];
 
 async function connectPrinter(){
-  const SVC1 = 0xae30, SVC2 = 0xaf30;
-  btDevice = await navigator.bluetooth.requestDevice({
-    filters:[
-      {services:[SVC1]}, {services:[SVC2]},
-      {namePrefix:'GB0'},{namePrefix:'GT0'},{namePrefix:'YT0'},
-      {namePrefix:'MX0'},{namePrefix:'MX1'},{namePrefix:'MXW'},{namePrefix:'MXTP'},
-      {namePrefix:'SC0'},{namePrefix:'SC1'},
-    ],
-    optionalServices: PROBE_SERVICES,
-  });
+  const anyDevice = cfg.anyDevice;
+  log(anyDevice ? '▶ Device picker: showing ALL devices' : '▶ Device picker: printer names only');
+  btDevice = await navigator.bluetooth.requestDevice(
+    anyDevice
+      ? { acceptAllDevices: true, optionalServices: PROBE_SERVICES }
+      : { filters: NAME_FILTERS, optionalServices: PROBE_SERVICES }
+  );
+  log('Picked: ' + (btDevice.name || '(no name)') + ' / id ' + btDevice.id);
   btDevice.addEventListener('gattserverdisconnected', ()=>{ setPrStatus(false); log('Disconnected'); });
   const server = await btDevice.gatt.connect();
   let svc;
-  try{ svc = await server.getPrimaryService(SVC1); log('Service 0xAE30'); }
-  catch(e){ svc = await server.getPrimaryService(SVC2); log('Service 0xAF30'); }
+  try{ svc = await server.getPrimaryService(SVC_AE30); log('Service 0xAE30'); }
+  catch(e1){
+    try{ svc = await server.getPrimaryService(SVC_AF30); log('Service 0xAF30'); }
+    catch(e2){
+      /* 둘 다 없으면 여기서 끝내지 말고, 실제로 무엇이 있는지 로그에 남긴다.
+         이 목록 한 줄이면 다음 진단이 추측 대신 사실에서 시작된다. */
+      try{
+        const all = await server.getPrimaryServices();
+        log('Neither 0xAE30 nor 0xAF30. Services: ' + (all.map(s=>s.uuid).join(', ') || 'none'));
+      }catch(e3){ log('Service discovery failed: ' + e3.name + ' / ' + e3.message); }
+      throw e2;
+    }
+  }
 
-  btChar = await svc.getCharacteristic(0xae01);
+  btChar = await svc.getCharacteristic(CHR_CTRL);
   log('Control characteristic 0xAE01 acquired');
 
   // 데이터 특성(0xAE03) — 신형 프로토콜용. 없으면 무시
   btData = null;
-  try{ btData = await svc.getCharacteristic(0xae03); log('Data characteristic 0xAE03 acquired'); }
+  try{ btData = await svc.getCharacteristic(CHR_DATA); log('Data characteristic 0xAE03 acquired'); }
   catch(e){ log('No 0xAE03 (likely an older protocol)'); }
 
   // 알림 구독 — 프린터가 보내는 응답을 로그로 확인
   try{
-    btNotify = await svc.getCharacteristic(0xae02);
+    btNotify = await svc.getCharacteristic(CHR_NOTIFY);
     await btNotify.startNotifications();
     btNotify.addEventListener('characteristicvaluechanged', e=>{
       const bytes = new Uint8Array(e.target.value.buffer);
@@ -1410,8 +1446,10 @@ async function ensureConnected(){
     if(!btChar || !btDevice?.gatt?.connected) await connectPrinter();
     return true;
   }catch(e){
-    log('Connection failed: '+e.message);
-    showErr('The printer connection was cancelled or failed. Check that the printer is on and Bluetooth is enabled, then try again.');
+    /* 오류 이름까지 남긴다 — NotFoundError(목록에 없음/취소), NotSupportedError(서비스 없음),
+       SecurityError(권한) 는 원인이 완전히 다른데 메시지만으로는 구분이 안 된다. */
+    log('Connection failed: ' + e.name + ' / ' + e.message);
+    showErr('The printer connection was cancelled or failed. Check that the printer is on and Bluetooth is enabled, then try again.<br>If the printer never appears in the list, open ⚙ Settings and turn on <b>Show all Bluetooth devices</b>.');
     return false;
   }
 }
@@ -1773,6 +1811,7 @@ function syncSettings(){
   $('energy').value = cfg.energy; $('energyVal').textContent = cfg.energy + ' / 10';
   $('bright').value = cfg.bright; $('brightVal').textContent = (cfg.bright>0?'+':'')+cfg.bright;
   $('sharp').value = cfg.sharp; $('sharpVal').textContent = cfg.sharp + ' / 10';
+  $('anyDevice').checked = cfg.anyDevice;
 }
 $('gearBtn').onclick = ()=>{ syncSettings(); $('modalBg').classList.add('show'); };
 $('modalBg').onclick = e=>{ if(e.target===$('modalBg')) $('modalBg').classList.remove('show'); };
@@ -1782,6 +1821,13 @@ $('footerText').onchange = e=>{ cfg.footer = e.target.value.trim() || 'Philippin
 $('energy').oninput = e=>{ cfg.energy = e.target.value; $('energyVal').textContent = e.target.value+' / 10'; };
 $('bright').oninput = e=>{ cfg.bright = e.target.value; $('brightVal').textContent = (e.target.value>0?'+':'')+e.target.value; };
 $('sharp').oninput = e=>{ cfg.sharp = e.target.value; $('sharpVal').textContent = e.target.value+' / 10'; };
+/* 다음 연결부터 적용되도록, 켜는 순간 기존 연결 상태를 버린다 */
+$('anyDevice').onchange = e=>{
+  cfg.anyDevice = e.target.checked;
+  if(btDevice?.gatt?.connected) btDevice.gatt.disconnect();
+  btChar = null; btData = null;
+  log('Show all devices: ' + (cfg.anyDevice ? 'ON' : 'OFF'));
+};
 </script>
 </body>
 </html>
