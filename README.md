@@ -88,7 +88,7 @@ Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by permission. All r
 1. 태블릿/폰에서 위 주소를 엽니다 (안드로이드는 **크롬**, 아이패드는 **Bluefy**)
 2. 메뉴 → **홈 화면에 추가** → 전체화면 키오스크 완성
 3. ⚙ Settings에서 **Card title · Footer line**을 확인합니다 (설정은 그 기기에만 저장됩니다)
-   - 기본값: `PHIL-MY-HEART` / `Philippines Mission · Jesus loves you`
+   - 기본값: `PHIL-MY-HEART` / `Jesus loves you`
 4. 프린터 전원을 켜고 **[🖨 Print]** → 블루투스 기기 선택창에서 `GB`/`GT`/`MX`/`YT`/`SC`로 시작하는 이름을 고릅니다. 한 번 연결하면 계속 유지됩니다
 5. **출국 전에 한 번은 실제로 인쇄해 보세요.** 현지에서 처음 눌러 보면 늦습니다
 

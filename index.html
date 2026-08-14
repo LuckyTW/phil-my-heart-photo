@@ -454,7 +454,7 @@ let verseIdx = pickVerse();
 const cfg = {
   get title(){ return store.get('pmh_title') || 'PHIL-MY-HEART'; },
   set title(v){ store.set('pmh_title', v); },
-  get footer(){ return store.get('pmh_footer') || 'Philippines Mission · Jesus loves you'; },
+  get footer(){ return store.get('pmh_footer') || 'Jesus loves you'; },
   set footer(v){ store.set('pmh_footer', v); },
   get energy(){ return parseInt(store.get('pmh_energy')||'5'); },
   set energy(v){ store.set('pmh_energy', v); },
@@ -721,20 +721,25 @@ const logoReady = new Promise(res=>{
   logoImg.src = LOGO_SRC;
 });
 
-/* 로고 대용 하트 마크. (x, y)를 좌상단으로 w x h 크기의 하트를 채운다.
-   베지어로 직접 그리므로 감열 인쇄에서도 실루엣이 또렷하다. */
+/* 로고 대용 하트 마크. (x, y)를 좌상단으로 w x h 상자 안에 하트를 채운다.
+   베지어로 직접 그리므로 감열 인쇄에서도 실루엣이 또렷하다.
+
+   제어점은 반드시 중심선(cx) 기준으로 짝을 맞춘다 — 한쪽만 어긋나면 그 옆구리가
+   안으로 파여서 하트가 깨져 보인다. 아래 네 구간은 cx 대칭이다:
+     왼쪽 봉우리 ↔ 오른쪽 봉우리, 왼쪽 옆구리 ↔ 오른쪽 옆구리 */
 const HEART_W = 56, HEART_RATIO = 0.88;
 function drawHeartMark(ctx, x, y, w, h, color){
+  const cx = x + w/2;
+  const dip = h * 0.30;              // 두 봉우리 사이가 파이는 깊이
+  const mid = y + (h + dip) / 2;     // 옆구리 제어점 높이
   ctx.save();
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(x + w/2, y + h);
-  ctx.quadraticCurveTo(x + w/4, y + h*0.72, x, y + h*0.42);
-  ctx.quadraticCurveTo(x, y, x + w/4, y);
-  ctx.quadraticCurveTo(x + w/2, y, x + w/2, y + h*0.26);
-  ctx.quadraticCurveTo(x + w/2, y, x + w*3/4, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + h*0.42);
-  ctx.quadraticCurveTo(x + w, y + h*0.72, x + w/2, y + h);
+  ctx.moveTo(cx, y + dip);
+  ctx.bezierCurveTo(cx, y, x, y, x, y + dip);              // 가운데 → 왼쪽 봉우리
+  ctx.bezierCurveTo(x, mid, cx, mid, cx, y + h);           // 왼쪽 옆구리 → 아래 꼭짓점
+  ctx.bezierCurveTo(cx, mid, x + w, mid, x + w, y + dip);  // 아래 꼭짓점 → 오른쪽 옆구리
+  ctx.bezierCurveTo(x + w, y, cx, y, cx, y + dip);         // 오른쪽 봉우리 → 가운데
   ctx.closePath();
   ctx.fill();
   ctx.restore();
@@ -1817,7 +1822,7 @@ $('gearBtn').onclick = ()=>{ syncSettings(); $('modalBg').classList.add('show');
 $('modalBg').onclick = e=>{ if(e.target===$('modalBg')) $('modalBg').classList.remove('show'); };
 $('closeSettings').onclick = ()=>{ $('modalBg').classList.remove('show'); if(previewReady) renderPreview(); };
 $('cardTitle').onchange = e=>{ cfg.title = e.target.value.trim() || 'PHIL-MY-HEART'; updateGalBadge(); };
-$('footerText').onchange = e=>{ cfg.footer = e.target.value.trim() || 'Philippines Mission · Jesus loves you'; };
+$('footerText').onchange = e=>{ cfg.footer = e.target.value.trim() || 'Jesus loves you'; };
 $('energy').oninput = e=>{ cfg.energy = e.target.value; $('energyVal').textContent = e.target.value+' / 10'; };
 $('bright').oninput = e=>{ cfg.bright = e.target.value; $('brightVal').textContent = (e.target.value>0?'+':'')+e.target.value; };
 $('sharp').oninput = e=>{ cfg.sharp = e.target.value; $('sharpVal').textContent = e.target.value+' / 10'; };
