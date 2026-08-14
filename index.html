@@ -143,7 +143,10 @@
     display:flex;justify-content:center;box-shadow:0 4px 16px rgba(31,39,51,.08);
   }
   #previewCanvas{
-    width:100%;max-width:300px;image-rendering:pixelated;
+    /* image-rendering 을 pixelated 로 두면, 3배 DPR 폰에서 384px 캔버스가 900 device px 로
+       '확대'되며 디더 점 하나가 2.3배 블록이 된다 — 실제 감열 출력(203dpi)보다 훨씬 나쁘게
+       보여서 판단을 그르친다. 브라우저 스무딩이 점 번짐과 눈의 공간 적분을 대신한다. */
+    width:100%;max-width:384px;image-rendering:auto;
     border:1px solid var(--line);background:#fff;
   }
   .verse-tag{
@@ -471,6 +474,19 @@ const cfg = {
 const W = 384; // 고양이 프린터 인쇄 폭(픽셀)
 let photoBitmap = null;
 
+/* 감열 도트 게인 보정 계수 (dotGainCompensate 에서 사용).
+   종이가 아직 탁하면 올리고(최대 1.45쯤), 허옇게 뜨면 내린다. 1 이면 보정 없음. */
+const DOT_GAIN = 1.30;
+
+/* getImageData/putImageData 를 반복하는 캔버스는 willReadFrequently 로 만들어야
+   GPU↔CPU 왕복이 사라진다. 이 힌트는 '첫 getContext' 에서만 반영되므로 생성 시점에 준다. */
+function cpuCanvas(w, h){
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d', { willReadFrequently: true });
+  return c;
+}
+
 async function loadPhoto(file){
   try{
     photoBitmap = await createImageBitmap(file, { imageOrientation:'from-image' });
@@ -482,6 +498,7 @@ async function loadPhoto(file){
       img.src = URL.createObjectURL(file);
     });
   }
+  invalidatePhotoCache();
 }
 
 /* 자동 명암 보정 v3 (지역 적응):
@@ -745,14 +762,66 @@ function drawHeartMark(ctx, x, y, w, h, color){
   ctx.restore();
 }
 
+/* ---------- 고품질 축소 ----------
+   브라우저 기본 drawImage 축소는 2x2 쌍선형이라, 4032px → 384px 처럼 한 번에 10배 넘게
+   줄이면 목적지 픽셀 하나가 원본 4개만 보고 나머지 100여 개를 통째로 버린다 (모아레·계단).
+   → 정확히 절반씩 여러 번 줄인다. 2:1 축소에서는 2x2 쌍선형이 곧 완전한 박스 평균이라
+     원본 정보가 하나도 버려지지 않는다. imageSmoothingQuality 를 브라우저가 무시해도
+     결과 품질이 유지되는 것이 이 방식의 핵심이다 (WebKit 은 'high' 를 흘리는 판이 있다).
+
+   ⚠ canvas.width/height 대입은 2D 컨텍스트를 기본값으로 되돌려 imageSmoothingQuality 를
+     지운다. 반드시 크기를 정한 뒤에 설정할 것. */
+function drawScaled(dctx, src, sx, sy, sw, sh, dw, dh){
+  dctx.imageSmoothingEnabled = true;
+  dctx.imageSmoothingQuality = 'high';
+  if(sw <= dw*2 && sh <= dh*2){                 // 확대이거나 2배 이내 축소 → 한 번에
+    dctx.drawImage(src, sx, sy, sw, sh, 0, 0, dw, dh);
+    return;
+  }
+  // 1단계에서 크롭까지 흡수한다 — 이후로는 크롭 좌표가 필요 없다
+  let cw = Math.max(dw, Math.ceil(sw/2)), ch = Math.max(dh, Math.ceil(sh/2));
+  let a = document.createElement('canvas');
+  a.width = cw; a.height = ch;
+  let ax = a.getContext('2d');                  // 순수 블릿 — willReadFrequently 금물
+  ax.imageSmoothingEnabled = true; ax.imageSmoothingQuality = 'high';
+  ax.drawImage(src, sx, sy, sw, sh, 0, 0, cw, ch);
+  while(cw > dw*2 || ch > dh*2){                // 목표의 2배 이내가 될 때까지 반씩
+    const nw = Math.max(dw, Math.ceil(cw/2)), nh = Math.max(dh, Math.ceil(ch/2));
+    const b = document.createElement('canvas');
+    b.width = nw; b.height = nh;
+    const bx = b.getContext('2d');
+    bx.imageSmoothingEnabled = true; bx.imageSmoothingQuality = 'high';
+    bx.drawImage(a, 0, 0, cw, ch, 0, 0, nw, nh);
+    a = b; cw = nw; ch = nh;
+  }
+  dctx.drawImage(a, 0, 0, cw, ch, 0, 0, dw, dh);
+}
+
+/* 축소 결과 캐시.
+   renderPreview() 는 탭 전환·토글·설정 닫기·직접입력 키 입력(350ms 디바운스)마다 불린다.
+   매번 12MP 를 다시 줄이면 화면이 멈춘다. 목표 크기는 인쇄(384)·컬러(1152) 두 종류뿐이고
+   크롭 좌표는 photoBitmap 의 순수 함수라, 두 칸이면 적중률이 사실상 100% 다.
+   ⚠ 여기 담기는 것은 '보정 전' 원본 축소본이다. 보정은 반드시 사본에서 한다. */
+const photoScaleCache = new Map();
+function invalidatePhotoCache(){ photoScaleCache.clear(); }
+function scaledPhoto(bmp, sx, sy, sw, sh, dw, dh){
+  const key = dw + 'x' + dh;
+  const hit = photoScaleCache.get(key);
+  if(hit && hit.src === bmp) return hit.canvas;
+  const c = document.createElement('canvas');
+  c.width = dw; c.height = dh;
+  drawScaled(c.getContext('2d'), bmp, sx, sy, sw, sh, dw, dh);
+  photoScaleCache.set(key, { src: bmp, canvas: c });
+  return c;
+}
+
 /* 로고 마스크(그레이스케일 = 진하기)를 카드용으로 착색.
    인쇄 모드는 순수 흑백으로 임계 처리 — 단색 엠블럼이라 디더링 없이 실루엣만 남아
    384px 감열 출력에서 회색 잔상 없이 또렷하다. */
 function logoCanvas(w, h, mono){
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
+  const c = cpuCanvas(w, h);
   const x = c.getContext('2d');
-  x.drawImage(logoImg, 0, 0, w, h);
+  drawScaled(x, logoImg, 0, 0, logoImg.naturalWidth || w, logoImg.naturalHeight || h, w, h);
   const d = x.getImageData(0, 0, w, h), p = d.data;
   for(let i=0; i<p.length; i+=4){
     const m = p[i];                                            // 마스크 밝기 = 로고 진하기
@@ -822,9 +891,10 @@ function buildCard(mode){
     let sx=0, sy=0, sw=photoBitmap.width, sh=photoBitmap.height;
     if(srcRatio > dstRatio){ sw = sh*dstRatio; sx = (photoBitmap.width-sw)/2; }
     else { sh = sw/dstRatio; sy = (photoBitmap.height-sh)/2; }
-    const pc = document.createElement('canvas');
-    pc.width = CW; pc.height = photoH;
-    pc.getContext('2d').drawImage(photoBitmap, sx,sy,sw,sh, 0,0, CW, photoH);
+    /* 캐시된 축소본은 원본 그대로 두고, 보정은 사본에만 건다 */
+    const base = scaledPhoto(photoBitmap, sx,sy,sw,sh, CW, photoH);
+    const pc = cpuCanvas(CW, photoH);
+    pc.getContext('2d').drawImage(base, 0, 0);
     if(prettyOn) smoothPhoto(pc);                 // ✨ 곱게: 피부결 부드럽게 + 톤 업
     if(isColor){
       colorEnhance(pc, cfg.bright);               // 색 유지한 채 어두운 영역만 밝힘 (약하게)
@@ -1099,6 +1169,7 @@ $('retake').onclick = ()=>{ syncFacing(); startCam(); };
 /* ✍️ 사진 없이 카드만: 촬영이 부담스러운 아이들용 — 말씀+이름만 */
 $('noPhotoBtn').onclick = async ()=>{
   photoBitmap = null;
+  invalidatePhotoCache();
   verseIdx = pickVerse();
   await renderPreview();
   window.scrollTo({top:document.body.scrollHeight, behavior:'smooth'});
@@ -1166,6 +1237,7 @@ async function captureFrame(){
   stopCam();
   $('camView').classList.remove('show');
   photoBitmap = c;
+  invalidatePhotoCache();
   effectSeed = (Math.random()*1e9)|0;   // 새 사진 → 새 효과 배치 (탭 간에는 동일)
   verseIdx = pickVerse();
   await renderPreview();
