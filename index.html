@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>PHIL-MY-HEART · Photo Studio</title>
-<meta name="description" content="Take a photo with the kids, print it with John 3:16 on the spot — PHIL-MY-HEART Philippines mission photo studio">
+<meta name="description" content="Take a photo with the kids, print it with God's word on the spot — PHIL-MY-HEART Philippines mission photo studio">
 <!-- 홈 화면에 추가해 키오스크로 쓰는 앱이라 전체화면·테마색을 지정한다 -->
 <meta name="theme-color" content="#0B5CA8">
 <meta name="mobile-web-app-capable" content="yes">
@@ -427,14 +427,14 @@ $('bleGetApp').onclick = ()=> window.open(BLUEFY_URL, '_blank');
 syncBleBanner();
 
 /* ================= 인쇄할 말씀 ================= */
-/* 요한복음 3:16 한 구절 고정 (NIV).
+/* 요한일서 4:16 한 구절 고정 (NIV).
    NIV 인용 규정상 지면·게시물에 본문을 실을 때는 인용 끝에 (NIV) 표기가 있어야 하므로,
    출처 문자열 자체에 (NIV) 를 붙여 카드에 항상 함께 찍히도록 했다.
    Scripture quotation taken from The Holy Bible, New International Version(R) NIV(R)
    Copyright (c) 1973, 1978, 1984, 2011 by Biblica, Inc.(R) Used by permission.
    All rights reserved worldwide. */
 const VERSES = [
-  ["For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.", "John 3:16 (NIV)"],
+  ["God is love", "1 John 4:16 (NIV)"],
 ];
 
 /* 여러 구절에서 무작위로 뽑고 싶으면
@@ -588,9 +588,6 @@ function wrapText(ctx, text, maxW){
   return lines;
 }
 
-/* 말씀 본문에 맞는 글자 크기를 고른다.
-   요한복음 3:16(NIV)은 한글 구절보다 훨씬 길어서 고정 크기로는 카드가 지나치게 길어진다.
-   큰 크기부터 넣어 보고 목표 줄 수 안에 들어오는 첫 크기를 쓴다. */
 /* 카드에 찍히는 날짜. toLocaleDateString 은 기기 로케일 설정에 따라 결과가 달라져서,
    월 이름을 직접 들고 어느 태블릿에서 열어도 같은 영문 표기가 나오게 한다. */
 const MONTHS = ['January','February','March','April','May','June',
@@ -599,15 +596,24 @@ function formatDate(d){
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
-const VERSE_SIZES = [30, 27, 25, 23, 21];
+/* 말씀 본문 길이에 맞는 글자 크기를 고른다.
+   "God is love" 같은 짧은 구절은 크게, 여러 줄짜리 긴 구절은 작게 — 어느 쪽이든 카드 비례가 유지된다.
+   큰 크기부터 넣어 보고 아래 두 조건을 함께 만족하는 첫 크기를 쓴다.
+     · 목표 줄 수(6줄) 안에 들어올 것
+     · 단어를 글자 단위로 쪼개지 않아도 될 것
+       (크기를 키우려다 단어가 중간에서 잘리면 커진 것보다 읽기가 더 나빠진다)
+   둘 다 만족하는 크기가 없으면 가장 작은 크기로 떨어진다. */
+const VERSE_SIZES = [38, 34, 30, 27, 25, 23, 21];
 const VERSE_MAX_LINES = 6;
 function fitVerse(ctx, text, maxW, S){
+  const words = text.split(/\s+/).filter(Boolean);
   let chosen = VERSE_SIZES[VERSE_SIZES.length-1], lines = [];
   for(const size of VERSE_SIZES){
     ctx.font = `700 ${size*S}px "Lora", serif`;
     lines = wrapText(ctx, text, maxW);
     chosen = size;
-    if(lines.length <= VERSE_MAX_LINES) break;
+    const wordsFit = words.every(w => ctx.measureText(w).width <= maxW);
+    if(lines.length <= VERSE_MAX_LINES && wordsFit) break;
   }
   return { size: chosen, lineH: Math.round(chosen*1.45), lines };
 }

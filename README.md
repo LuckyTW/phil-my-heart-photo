@@ -1,6 +1,6 @@
 # PHIL-MY-HEART — 필리핀 단기선교 사진관
 
-> 아이들과 함께 사진을 찍고, **요한복음 3:16과 함께 한 장에 담아** 그 자리에서 인화해 주는 키오스크
+> 아이들과 함께 사진을 찍고, **요한일서 4:16과 함께 한 장에 담아** 그 자리에서 인화해 주는 키오스크
 
 태블릿으로 사진을 찍으면 말씀과 합성해 감열 프린터로 즉석 출력합니다.
 **서버도, 계정도, API 키도, 통신비도 필요 없습니다.** 사진은 전송되지 않고 그 기기 안에만 남습니다.
@@ -19,13 +19,15 @@
 
 ## 인화되는 말씀
 
-**John 3:16 (NIV)** 한 구절 고정입니다.
+**1 John 4:16 (NIV)** 한 구절 고정입니다.
 
-> For God so loved the world that he gave his one and only Son,
-> that whoever believes in him shall not perish but have eternal life.
+> God is love
 
 NIV는 저작권이 있는 번역입니다. 게시물·인쇄물에 본문을 실을 때는 **인용 끝에 `(NIV)` 표기**가 있어야 해서,
-출처 문자열 자체를 `"John 3:16 (NIV)"` 로 두어 카드에 항상 함께 찍히도록 했습니다.
+출처 문자열 자체를 `"1 John 4:16 (NIV)"` 로 두어 카드에 항상 함께 찍히도록 했습니다.
+
+> 참고: `God is love` 는 세 단어짜리 구절이라 대부분의 영어 번역에서 표현이 같습니다.
+> 표기를 빼려면 `VERSES` 의 출처 문자열에서 ` (NIV)` 만 지우면 됩니다.
 
 *Scripture quotation taken from The Holy Bible, New International Version® NIV®
 Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by permission. All rights reserved worldwide.*
@@ -115,7 +117,7 @@ Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by permission. All r
 - **페이지 내 카메라** — 전면/후면 전환, 줌, 3초 타이머, 카메라 앱 폴백
 - **사진 보정** — 지역 적응 명암 보정(조명 맵 기반, 역광에서도 얼굴이 살아남) → 언샤프 마스크 선명화 → 플로이드-스타인버그 디더링
 - **✨ Soften** — 피부결을 부드럽게 하고 톤을 살짝 올립니다
-- **말씀** — John 3:16 (NIV) 고정 / 🙏 **기도·축복 직접 입력**
+- **말씀** — 1 John 4:16 (NIV) 고정 / 🙏 **기도·축복 직접 입력**
 - **🎨 Color card** — 인쇄용 흑백과 별개로 컬러 이미지 저장·공유
 - **🖼 Gallery** — 만든 카드가 기기 안(IndexedDB)에 남습니다. 서버 전송 없음
 - **🎉 Effects** — 사진에 장식 얹기 (Confetti / Sparkle / Petals)
@@ -170,11 +172,11 @@ Copyright © 1973, 1978, 1984, 2011 by Biblica, Inc.® Used by permission. All r
 > `pickVerse()` 함수 하나로 모아 뒀습니다. 2번만 고치면 네 곳이 한꺼번에 바뀝니다.
 > 3번을 빼먹으면 눌러도 말씀이 안 바뀌는 버튼이 남으니 함께 푸세요.
 
-### 긴 영어 구절이 들어가도 괜찮나요
+### 구절 길이가 달라져도 괜찮나요
 
-괜찮습니다. `fitVerse()` 가 본문 길이를 보고 **글자 크기를 30 → 21px 사이에서 자동으로 줄여**
-목표 줄 수(6줄) 안에 맞춥니다. 카드 폭보다 긴 단어 하나가 들어와도 `breakLongWord()` 가
-글자 단위로 쪼개 카드 밖으로 삐져나가지 않습니다.
+괜찮습니다. `fitVerse()` 가 본문 길이를 보고 **글자 크기를 38 ~ 21px 사이에서 자동으로 정합니다.**
+`God is love` 처럼 짧으면 크게, 여러 줄짜리 긴 구절이면 작게 잡아 목표 줄 수(6줄) 안에 맞춥니다.
+카드 폭보다 긴 단어 하나가 들어와도 `breakLongWord()` 가 글자 단위로 쪼개 카드 밖으로 삐져나가지 않습니다.
 
 ---
 
